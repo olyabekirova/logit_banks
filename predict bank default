@@ -1,0 +1,115 @@
+library(lmtest)
+library(dplyr)
+library(broom)
+library(ggplot2)
+library(forecast)
+library(strucchange)
+library(tseries)
+library(readxl)
+library(vcd)
+library(vars)
+library(rio)
+library(urca)
+library(funModeling) 
+library(Hmisc)
+library(CARS)
+library(readxl)
+library(Hmisc)
+
+require(GGally)
+require(reshape2)
+require(lme4)
+require(compiler)
+require(parallel)
+require(boot)
+require(lattice)
+
+
+#Загружаем данные
+my_data <-read_excel("C:/Users/oabek/Desktop/my data new.xlsx")
+head(my_data[,6:26])
+live <- subset(my_data, default==0)
+default <- subset(my_data, default==1)
+
+
+#Описательные статистики
+summary(my_data[,6:26])
+
+my_data <-  na.omit(my_data)
+
+#Корреляционная матрица
+data <-  my_data[,6:26]
+View(data)
+
+
+res <- cor(data)
+round(res,2)
+
+#Тепловая карта корреляций
+melted_cormat <- melt(cor)
+ggplot(data = melted_cormat, aes(x=Var1, y=Var2, fill=value)) + 
+  geom_tile()
+
+#Распределения показателей
+plot_num(my_data[,6:25])
+
+plot(log(my_data$assets))
+ggplot(my_data, aes(x=assets))+ geom_histogram() + facet_grid(default ~ .)
+
+ggplot(my_data, aes(x=delayed_nbs_credit))+geom_histogram(aes(color=default))
+
+
+#Р’РёР·СѓР°Р»РёР·Р°С†РёСЏ РїРѕ РіСЂСѓРїРїР°Рј РґРµС„РѕР»С‚/РІС‹Р¶РёРІС€РёРµ
+
+
+ggpairs(my_data[,6:26])
+
+tmp <- melt(my_data[, 6:26],
+            id.vars="default")
+
+ggplot(tmp, aes(factor(default), y = value, fill=factor(default))) +
+  geom_boxplot() +
+  facet_wrap(~variable, scales="free_y")
+
+
+
+#Выбраем уникальные id
+unique_id <- unique(my_data$ID)
+
+
+randomRows = function(df,n){
+  return(df[sample(nrow(df),n),])
+}
+
+#Построение модели для 50 случайных выборок
+
+set.seed(567)
+myResults <- list()
+df.split <- split(live, live$ID)
+
+hl_pval <- c()
+hl <- list()
+model_list <- list()
+
+
+for(i in 1:100){
+  df.sample <- lapply(df.split, randomRows, 1)
+  df.final <- do.call("rbind", df.sample)
+  randomly_live <- randomRows(df.final, nrow(default))
+  data1 <- rbind(default, randomly_live)
+  model_list[[i]] = glm(default ~ log(assets)+sk_a+hh_dep_a+hh_dep_liab+gov_sec_a+
+                          nongov_sec_a+cor_acc_a+res_to_cb_a+foreign_liab_a+
+                          credit_to_banks_A+nbs_credit_a+credit_to_hh_a+
+                          mbk_a+res_a+delayed_nbs_credit+overdue_liab+
+                          liab_bank_ratio+marketdebt_liab+foreign_assets_a +H1, data = data1,
+                        family = 'binomial')
+  hl[[i]] <- hoslem.test(model_list[[i]]$y, fitted(model_list[[i]]), g=10)
+  hl_pval[i] <- hl[[i]]$p.value
+}
+
+
+
+summary(model_list[[which.max(hl_pval)]])
+
+max(hl_pval)
+
